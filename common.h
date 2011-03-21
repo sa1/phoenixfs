@@ -2,7 +2,7 @@
 #define COMMON_H_
 
 #if 1
-#define GITFS_DBG(f, ...) \
+#define PHOENIXFS_DBG(f, ...) \
 { \
 	FILE *logfh = fopen("/tmp/gitfs.log", "a");	\
 	if (logfh) { \
@@ -11,7 +11,7 @@
 	} \
 }
 #else
-#define GITFS_DBG(f, ...) while(0)
+#define PHOENIXFS_DBG(f, ...) while(0)
 #endif
 
 void die(const char *err, ...);
