@@ -4,7 +4,7 @@
 #if 1
 #define PHOENIXFS_DBG(f, ...) \
 { \
-	FILE *logfh = fopen("/tmp/gitfs.log", "a");	\
+	FILE *logfh = fopen("/tmp/phoenixfs.log", "a");	\
 	if (logfh) { \
 		fprintf(logfh, "l. %4d: " f "\n", __LINE__, ##__VA_ARGS__); \
 		fclose(logfh); \

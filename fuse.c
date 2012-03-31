@@ -21,12 +21,12 @@
 static char xpath[PATH_MAX] = "\0";
 static char openpath[PATH_MAX] = "\0";
 
-void *gitfs_init(struct fuse_conn_info *conn)
+void *phoenixfs_init(struct fuse_conn_info *conn)
 {
 	return ROOTENV;
 }
 
-static int gitfs_getattr(const char *path, struct stat *stbuf)
+static int phoenixfs_getattr(const char *path, struct stat *stbuf)
 {
 	struct file_record *fr;
 	int rev;
@@ -50,7 +50,7 @@ static int gitfs_getattr(const char *path, struct stat *stbuf)
 	return 0;
 }
 
-static int gitfs_fgetattr(const char *path, struct stat *stbuf,
+static int phoenixfs_fgetattr(const char *path, struct stat *stbuf,
 			struct fuse_file_info *fi)
 {
 	PHOENIXFS_DBG("fgetattr:: %s", path);
@@ -60,7 +60,7 @@ static int gitfs_fgetattr(const char *path, struct stat *stbuf,
 	return 0;
 }
 
-static int gitfs_opendir(const char *path, struct fuse_file_info *fi)
+static int phoenixfs_opendir(const char *path, struct fuse_file_info *fi)
 {
 	DIR *dp;
 
@@ -73,7 +73,7 @@ static int gitfs_opendir(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-static int gitfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+static int phoenixfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			off_t offset, struct fuse_file_info *fi)
 {
 	DIR *dp;
@@ -130,14 +130,14 @@ static int gitfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	return 0;
 }
 
-static int gitfs_releasedir(const char *path, struct fuse_file_info *fi)
+static int phoenixfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
 	if (closedir((DIR *) (uintptr_t) fi->fh) < 0)
 		return -errno;
 	return 0;
 }
 
-static int gitfs_access(const char *path, int mask)
+static int phoenixfs_access(const char *path, int mask)
 {
 	PHOENIXFS_DBG("access:: %s", path);
 	build_xpath(xpath, path, 0);
@@ -146,7 +146,7 @@ static int gitfs_access(const char *path, int mask)
 	return 0;
 }
 
-static int gitfs_symlink(const char *path, const char *link)
+static int phoenixfs_symlink(const char *path, const char *link)
 {
 	char xlink[PATH_MAX];
 
@@ -159,7 +159,7 @@ static int gitfs_symlink(const char *path, const char *link)
 	return 0;
 }
 
-static int gitfs_rename(const char *path, const char *newpath)
+static int phoenixfs_rename(const char *path, const char *newpath)
 {
 	char xnewpath[PATH_MAX];
 	struct dir_record *dr;
@@ -221,7 +221,7 @@ static int gitfs_rename(const char *path, const char *newpath)
 	return 0;
 }
 
-static int gitfs_link(const char *path, const char *newpath)
+static int phoenixfs_link(const char *path, const char *newpath)
 {
 	static char xnewpath[PATH_MAX];
 
@@ -233,7 +233,7 @@ static int gitfs_link(const char *path, const char *newpath)
 	return 0;
 }
 
-static int gitfs_chmod(const char *path, mode_t mode)
+static int phoenixfs_chmod(const char *path, mode_t mode)
 {
 	PHOENIXFS_DBG("chmod:: %s", path);
 	build_xpath(xpath, path, 0);
@@ -242,13 +242,13 @@ static int gitfs_chmod(const char *path, mode_t mode)
 	return 0;
 }
 
-static int gitfs_chown(const char *path, uid_t uid, gid_t gid)
+static int phoenixfs_chown(const char *path, uid_t uid, gid_t gid)
 {
 	/* chown is a no-op */
 	return 0;
 }
 
-static int gitfs_truncate(const char *path, off_t newsize)
+static int phoenixfs_truncate(const char *path, off_t newsize)
 {
 	PHOENIXFS_DBG("truncate:: %s to %lu", path, newsize);
 	build_xpath(xpath, path, 0);
@@ -257,7 +257,7 @@ static int gitfs_truncate(const char *path, off_t newsize)
 	return 0;
 }
 
-static int gitfs_utime(const char *path, struct utimbuf *ubuf)
+static int phoenixfs_utime(const char *path, struct utimbuf *ubuf)
 {
 	PHOENIXFS_DBG("utime:: %s", path);
 	build_xpath(xpath, path, 0);
@@ -266,7 +266,7 @@ static int gitfs_utime(const char *path, struct utimbuf *ubuf)
 	return 0;
 }
 
-static int gitfs_open(const char *path, struct fuse_file_info *fi)
+static int phoenixfs_open(const char *path, struct fuse_file_info *fi)
 {
 	int rev, fd;
 	FILE *infile, *fsfile;
@@ -311,7 +311,7 @@ END:
 	return 0;
 }
 
-static int gitfs_mknod(const char *path, mode_t mode, dev_t dev)
+static int phoenixfs_mknod(const char *path, mode_t mode, dev_t dev)
 {
 	PHOENIXFS_DBG("mknod:: %s", path);
 	build_xpath(xpath, path, 0);
@@ -325,7 +325,7 @@ static int gitfs_mknod(const char *path, mode_t mode, dev_t dev)
  * versions earlier than 2.6.15, the mknod() and open() methods
  * will be called instead.
  */
-static int gitfs_create(const char *path, mode_t mode,
+static int phoenixfs_create(const char *path, mode_t mode,
 			struct fuse_file_info *fi)
 {
 	int fd;
@@ -340,7 +340,7 @@ static int gitfs_create(const char *path, mode_t mode,
 	return 0;
 }
 
-static int gitfs_read(const char *path, char *buf, size_t size,
+static int phoenixfs_read(const char *path, char *buf, size_t size,
 		off_t offset, struct fuse_file_info *fi)
 {
 	ssize_t read_bytes;
@@ -351,7 +351,7 @@ static int gitfs_read(const char *path, char *buf, size_t size,
 	return read_bytes;
 }
 
-static int gitfs_write(const char *path, const char *buf, size_t size,
+static int phoenixfs_write(const char *path, const char *buf, size_t size,
 		off_t offset, struct fuse_file_info *fi)
 {
 	ssize_t written_bytes;
@@ -362,7 +362,7 @@ static int gitfs_write(const char *path, const char *buf, size_t size,
 	return written_bytes;
 }
 
-static int gitfs_statfs(const char *path, struct statvfs *statv)
+static int phoenixfs_statfs(const char *path, struct statvfs *statv)
 {
 	PHOENIXFS_DBG("statfs:: %s", path);
 	build_xpath(xpath, path, 0);
@@ -371,7 +371,7 @@ static int gitfs_statfs(const char *path, struct statvfs *statv)
 	return 0;
 }
 
-static int gitfs_release(const char *path, struct fuse_file_info *fi)
+static int phoenixfs_release(const char *path, struct fuse_file_info *fi)
 {
 	struct file_record *fr;
 	FILE *infile, *outfile;
@@ -454,7 +454,7 @@ END:
 	return 0;
 }
 
-static int gitfs_fsync(const char *path,
+static int phoenixfs_fsync(const char *path,
 		int datasync, struct fuse_file_info *fi)
 {
 	if (datasync) {
@@ -466,7 +466,7 @@ static int gitfs_fsync(const char *path,
 	return 0;
 }
 
-static int gitfs_ftruncate(const char *path,
+static int phoenixfs_ftruncate(const char *path,
 			off_t offset, struct fuse_file_info *fi)
 {
 	build_xpath(xpath, path, 0);
@@ -475,7 +475,7 @@ static int gitfs_ftruncate(const char *path,
 	return 0;
 }
 
-static int gitfs_readlink(const char *path, char *link, size_t size)
+static int phoenixfs_readlink(const char *path, char *link, size_t size)
 {
 	/* Always pass through to underlying filesystem */
 	PHOENIXFS_DBG("readlink:: %s", path);
@@ -485,7 +485,7 @@ static int gitfs_readlink(const char *path, char *link, size_t size)
 	return 0;
 }
 
-static int gitfs_mkdir(const char *path, mode_t mode)
+static int phoenixfs_mkdir(const char *path, mode_t mode)
 {
 	build_xpath(xpath, path, 0);
 	if (mkdir(xpath, mode) < 0)
@@ -493,7 +493,7 @@ static int gitfs_mkdir(const char *path, mode_t mode)
 	return 0;
 }
 
-static int gitfs_unlink(const char *path)
+static int phoenixfs_unlink(const char *path)
 {
 	/* Always pass through to underlying filesystem */
 	PHOENIXFS_DBG("unlink:: %s", path);
@@ -504,7 +504,7 @@ static int gitfs_unlink(const char *path)
 	return 0;
 }
 
-static int gitfs_rmdir(const char *path)
+static int phoenixfs_rmdir(const char *path)
 {
 	/* Always pass through to underlying filesystem */
 	PHOENIXFS_DBG("rmdir:: %s", path);
@@ -514,7 +514,7 @@ static int gitfs_rmdir(const char *path)
 	return 0;
 }
 
-static void gitfs_destroy(void *userdata)
+static void phoenixfs_destroy(void *userdata)
 {
 	FILE *outfile;
 
@@ -531,41 +531,41 @@ static void gitfs_destroy(void *userdata)
 	dump_packing_info(xpath);
 }
 
-static struct fuse_operations gitfs_oper = {
-	.init = gitfs_init,
-	.getattr = gitfs_getattr,
-	.fgetattr = gitfs_fgetattr,
-	.open = gitfs_open,
-	.mknod = gitfs_mknod,
-	.releasedir = gitfs_releasedir,
-	.create = gitfs_create,
-	.read = gitfs_read,
-	.write = gitfs_write,
-	.statfs = gitfs_statfs,
-	.access = gitfs_access,
+static struct fuse_operations phoenixfs_oper = {
+	.init = phoenixfs_init,
+	.getattr = phoenixfs_getattr,
+	.fgetattr = phoenixfs_fgetattr,
+	.open = phoenixfs_open,
+	.mknod = phoenixfs_mknod,
+	.releasedir = phoenixfs_releasedir,
+	.create = phoenixfs_create,
+	.read = phoenixfs_read,
+	.write = phoenixfs_write,
+	.statfs = phoenixfs_statfs,
+	.access = phoenixfs_access,
 	.getdir = NULL,
-	.readdir = gitfs_readdir,
-	.opendir = gitfs_opendir,
-	.readlink = gitfs_readlink,
-	.mkdir = gitfs_mkdir,
-	.rmdir = gitfs_rmdir,
-	.unlink = gitfs_unlink,
-	.fsync = gitfs_fsync,
-	.release = gitfs_release,
-	.ftruncate = gitfs_ftruncate,
-	.symlink = gitfs_symlink,
-	.link = gitfs_link,
-	.chown = gitfs_chown,
-	.chmod = gitfs_chmod,
-	.rename = gitfs_rename,
-	.truncate = gitfs_truncate,
-	.utime = gitfs_utime,
-	.destroy = gitfs_destroy,
+	.readdir = phoenixfs_readdir,
+	.opendir = phoenixfs_opendir,
+	.readlink = phoenixfs_readlink,
+	.mkdir = phoenixfs_mkdir,
+	.rmdir = phoenixfs_rmdir,
+	.unlink = phoenixfs_unlink,
+	.fsync = phoenixfs_fsync,
+	.release = phoenixfs_release,
+	.ftruncate = phoenixfs_ftruncate,
+	.symlink = phoenixfs_symlink,
+	.link = phoenixfs_link,
+	.chown = phoenixfs_chown,
+	.chmod = phoenixfs_chmod,
+	.rename = phoenixfs_rename,
+	.truncate = phoenixfs_truncate,
+	.utime = phoenixfs_utime,
+	.destroy = phoenixfs_destroy,
 };
 
-/* gitfs mount <path> <mountpoint> */
+/* phoenixfs mount <path> <mountpoint> */
 /* argv[2] is fsback and argv[3] is the mountpoint */
-int gitfs_fuse(int argc, char *argv[])
+int phoenixfs_fuse(int argc, char *argv[])
 {
 	int nargc;
 	char **nargv;
@@ -616,14 +616,14 @@ int gitfs_fuse(int argc, char *argv[])
 	if (!S_ISDIR(st.st_mode))
 		die(".git/loose not a directory: %s", xpath);
 
-	PHOENIXFS_DBG("gitfs_fuse:: fsback: %s, mountpoint: %s",
+	PHOENIXFS_DBG("phoenixfs_fuse:: fsback: %s, mountpoint: %s",
 		rootenv.fsback, rootenv.mountpoint);
 
 	/* Check for .git/HEAD to load tree */
 	sprintf(xpath, "%s/.git/HEAD", rootenv.fsback);
 	if (!access(xpath, F_OK) &&
 		(infile = fopen(xpath, "rb"))) {
-		PHOENIXFS_DBG("gitfs_fuse:: loading fstree");
+		PHOENIXFS_DBG("phoenixfs_fuse:: loading fstree");
 		fstree_load_tree(infile);
 	}
 
@@ -632,11 +632,11 @@ int gitfs_fuse(int argc, char *argv[])
 	sprintf(openpath, "%s/.git/master.idx", rootenv.fsback);
 	if ((access(xpath, F_OK) < 0) ||
 		(access(openpath, F_OK) < 0)) {
-		PHOENIXFS_DBG("gitfs_fuse:: not loading packing info");
+		PHOENIXFS_DBG("phoenixfs_fuse:: not loading packing info");
 		load_packing_info(xpath, openpath, false);
 	}
 	else {
-		PHOENIXFS_DBG("gitfs_fuse:: loading packing info");
+		PHOENIXFS_DBG("phoenixfs_fuse:: loading packing info");
 		load_packing_info(xpath, openpath, 1);
 	}
 
@@ -644,5 +644,5 @@ int gitfs_fuse(int argc, char *argv[])
 	nargv[1] = "-d";
 	nargv[2] = "-odefault_permissions";
 	nargv[3] = argv[3];
-	return fuse_main(nargc, nargv, &gitfs_oper, &rootenv);
+	return fuse_main(nargc, nargv, &phoenixfs_oper, &rootenv);
 }
