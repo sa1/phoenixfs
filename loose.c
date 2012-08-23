@@ -16,7 +16,7 @@ static int size_compare(const void *_a, const void *_b)
 	return (a->size < b->size) ? -1 : (a->size > b->size);
 }
 
-void add_loose_entry(unsigned char *sha1, size_t size)
+void add_loose_entry(const unsigned char *sha1, size_t size)
 {
 	uint32_t this_nr;
 	char sha1_digest[40];
