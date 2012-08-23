@@ -6,6 +6,19 @@
 
 #include <stdio.h>
 
+struct dr_tree {
+	uint16_t key;
+	uint16_t name_len;
+	unsigned char path_buf[PATH_MAX];
+};
+
+struct vfr_tree {
+	uint16_t key;
+	uint16_t name_len;
+	unsigned char path_buf[PATH_MAX];
+	uint8_t rev_nr;
+};
+
 void dump_dr_tree(struct node *root, FILE *outfile);
 struct node *load_dr_tree(FILE *infile);
 
