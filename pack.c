@@ -183,8 +183,10 @@ int unpack_entry(unsigned char *sha1, const char *loosedir)
 		PHOENIXFS_DBG("unpack_entry:: missing %s", sha1_digest);
 		return -1;
 	}
-	PHOENIXFS_DBG("unpack_entry:: %s %lld", sha1_digest, obj_offset);
-	fseek(packroot.packfh, obj_offset, SEEK_SET);
+	PHOENIXFS_DBG("unpack_entry:: %s %lld", sha1_digest,
+		(long long int)obj_offset);
+	if (fseek(packroot.packfh, obj_offset, SEEK_SET) < 0)
+		die("Seek error: packroot.packfh");
 	if (fread(&read_sha1, 20 * sizeof(unsigned char), 1, packroot.packfh) < 1)
 		die("Read error: read_sha1");
 	assert(memcmp(sha1, read_sha1, 20) == 0);
@@ -198,7 +200,7 @@ int unpack_entry(unsigned char *sha1, const char *loosedir)
 	}
 	if (!delta) {
 		if (fread(&size, sizeof(off_t), 1, packroot.packfh) < 1)
-			die("Read error: %lld", size);
+			die("Read error: %lld", (long long int)size);
 		PHOENIXFS_DBG("unpack_entry:: non-delta %s", sha1_digest);
 		buffer_copy_bytes(packroot.packfh, loosefh, size);
 	}
@@ -350,6 +352,7 @@ void unmap_write_idx(struct pack_idx_entry *objects[], int nr_objects)
 	unsigned int nr_large_offset;
 	struct pack_idx_header hdr;
 	off_t last_obj_offset = 0;
+	char sha1_digest[40];
 	uint32_t array[256];
 	register int i;
 	FILE *idxfh;
@@ -407,6 +410,9 @@ void unmap_write_idx(struct pack_idx_entry *objects[], int nr_objects)
 		uint32_t offset = (obj->offset <= pack_idx_off32_limit) ?
 			obj->offset : (0x80000000 | nr_large_offset++);
 		offset = htonl(offset);
+		print_sha1(sha1_digest, obj->sha1);
+		PHOENIXFS_DBG("unmap_write_idx:: %s %llu", sha1_digest,
+			(long long int)obj->offset);
 		fwrite(&offset, sizeof(uint32_t), 1, idxfh);
 	}
 

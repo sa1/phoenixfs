@@ -250,7 +250,7 @@ static int phoenixfs_chown(const char *path, uid_t uid, gid_t gid)
 
 static int phoenixfs_truncate(const char *path, off_t newsize)
 {
-	PHOENIXFS_DBG("truncate:: %s to %lld", path, newsize);
+	PHOENIXFS_DBG("truncate:: %s to %lld", path, (long long int)newsize);
 	build_xpath(xpath, path, 0);
 	if (truncate(xpath, newsize) < 0)
 		return -errno;
@@ -601,6 +601,7 @@ int phoenixfs_fuse(int argc, char *argv[])
 	/* Check for .git directory */
 	sprintf(xpath, "%s/.git", rootenv.fsback);
 
+	mkdir(xpath, S_IRUSR | S_IWUSR | S_IXUSR);
 	if ((lstat(xpath, &st) < 0) ||
 		(access(xpath, R_OK | W_OK | X_OK) < 0))
 		die(".git doesn't have rwx permissions: %s", xpath);
