@@ -230,6 +230,7 @@ int map_pack_idx(FILE *src)
 	}
 	idx_map = mmap(NULL, idx_size, PROT_READ, MAP_PRIVATE, srcfd, 0);
 	close(srcfd);
+	fclose(src);
 	hdr = idx_map;
 	if (hdr->signature != htonl(PACK_IDX_SIGNATURE)) {
 		munmap(idx_map, idx_size);
@@ -346,7 +347,7 @@ static int sha1_compare(const void *_a, const void *_b)
 	return memcmp(a->sha1, b->sha1, 20);
 }
 
-void unmap_write_idx(struct pack_idx_entry *objects[], int nr_objects)
+void unmap_write_idx(struct pack_idx_entry **objects, int nr_objects)
 {
 	struct pack_idx_entry **sorted_by_sha, **list, **last;
 	unsigned int nr_large_offset;
@@ -430,6 +431,9 @@ void unmap_write_idx(struct pack_idx_entry *objects[], int nr_objects)
 		}
 	}
 	/* Omit the checksum trailer: 2 * 20 */
+	for (i = 0; i < nr_objects; i++)
+		free(objects[i]);
+	fclose(idxfh);
 }
 
 static int write_pack_hdr(const char *pack_path)

@@ -21,6 +21,7 @@ static void dump_frs(struct vfile_record *vfr, uint8_t start_rev,
 	while (start_rev < rev_nr) {
 		fwrite(vfr->history[start_rev],
 			sizeof(struct file_record), 1, outfile);
+		free(vfr->history[start_rev]);
 		PHOENIXFS_DBG("dump_frs:: %s [%u]", vfr->name, start_rev);
 		start_rev = (start_rev + 1) % REV_TRUNCATE;
 	}
@@ -36,13 +37,34 @@ static void dump_vfr_tree(struct node *root, FILE *outfile)
 	struct vfile_record *vfr;
 	uint8_t start_rev, rev_nr;
 	uint16_t name_len;
-	register int i;
+	int num_keys = 0;
+	int i = 0;
 	node *iter;
 
+	if (!(iter = root)) {
+		/* Write num_keys = 0 */
+		fwrite(&i, sizeof(uint16_t), 1, outfile);
+		return;
+	}
+
+	/* First compute and write the number of keys */
+	while (!iter->is_leaf)
+		iter = iter->pointers[0];
+
+	while (1) {
+		for (i = 0; i < iter->num_keys; i++)
+			num_keys++;
+		if (iter->pointers && iter->pointers[BTREE_ORDER - 1] != NULL)
+			iter = iter->pointers[BTREE_ORDER - 1];
+		else
+			break;
+	}
+	fwrite(&num_keys, sizeof(uint16_t), 1, outfile);
+
+	/* Now write the entries */
 	iter = root;
 	while (!iter->is_leaf)
 		iter = iter->pointers[0];
-	fwrite(&(iter->num_keys), sizeof(uint16_t), 1, outfile);
 
 	while (1) {
 		for (i = 0; i < iter->num_keys; i++) {
@@ -74,11 +96,12 @@ static void dump_vfr_tree(struct node *root, FILE *outfile)
 			/* Write the actual file records in chronological order */
 			dump_frs(vfr, start_rev, rev_nr, outfile);
 		}
-		if (iter->pointers[BTREE_ORDER - 1] != NULL)
+		if (iter->pointers && iter->pointers[BTREE_ORDER - 1] != NULL)
 			iter = iter->pointers[BTREE_ORDER - 1];
 		else
 			break;
 	}
+	destroy_tree(root);
 }
 
 /**
@@ -90,15 +113,34 @@ void dump_dr_tree(struct node *root, FILE *outfile)
 {
 	struct dir_record *dr;
 	uint16_t name_len;
-	register int i;
+	int num_keys = 0;
+	int i = 0;
 	node *iter;
 
-	if (!(iter = root))
+	if (!(iter = root)) {
+		/* Write num_keys = 0 */
+		fwrite(&i, sizeof(uint16_t), 1, outfile);
 		return;
+	}
 
+	/* First compute and write the number of keys */
 	while (!iter->is_leaf)
 		iter = iter->pointers[0];
-	fwrite(&(iter->num_keys), sizeof(uint16_t), 1, outfile);
+
+	while (1) {
+		for (i = 0; i < iter->num_keys; i++)
+			num_keys++;
+		if (iter->pointers && iter->pointers[BTREE_ORDER - 1] != NULL)
+			iter = iter->pointers[BTREE_ORDER - 1];
+		else
+			break;
+	}
+	fwrite(&num_keys, sizeof(uint16_t), 1, outfile);
+
+	/* Now write the entries */
+	iter = root;
+	while (!iter->is_leaf)
+		iter = iter->pointers[0];
 
 	while (1) {
 		for (i = 0; i < iter->num_keys; i++) {
@@ -114,11 +156,12 @@ void dump_dr_tree(struct node *root, FILE *outfile)
 
 			dump_vfr_tree(dr->vroot, outfile);
 		}
-		if (iter->pointers[BTREE_ORDER - 1] != NULL)
+		if (iter->pointers && iter->pointers[BTREE_ORDER - 1] != NULL)
 			iter = iter->pointers[BTREE_ORDER - 1];
 		else
 			break;
 	}
+	destroy_tree(root);
 }
 
 

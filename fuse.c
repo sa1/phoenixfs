@@ -17,9 +17,12 @@
 #include <zlib.h>
 #include <ftw.h>
 #include <sys/types.h>
+#include <pthread.h>
 
 static char xpath[PATH_MAX] = "\0";
 static char openpath[PATH_MAX] = "\0";
+
+static pthread_mutex_t phoenixfs_mutexlock = PTHREAD_MUTEX_INITIALIZER;
 
 void *phoenixfs_init(struct fuse_conn_info *conn)
 {
@@ -29,24 +32,28 @@ void *phoenixfs_init(struct fuse_conn_info *conn)
 static int phoenixfs_getattr(const char *path, struct stat *stbuf)
 {
 	struct file_record *fr;
+	struct dir_record *dr;
 	int rev;
 
 	rev = parse_pathspec(xpath, path);
 	build_xpath(openpath, xpath, rev);
 	PHOENIXFS_DBG("getattr:: %s %d", openpath, rev);
 
-	/* Get directories and latest files from underlying FS */
-	if (!rev) {
-		if (lstat(openpath, stbuf) < 0)
-			return -errno;
-		return 0;
+	/* Try underlying FS */
+	if (lstat(openpath, stbuf) < 0) {
+		/* Try fstree */
+		if (!(dr = find_dr(xpath))) {
+			if (!(fr = find_fr(xpath, rev)))
+				return -ENOENT;
+			else {
+				memset(stbuf, 0, sizeof(struct stat));
+				fill_stat(stbuf, fr);
+				return 0;
+			}
+		}
+		memset(stbuf, 0, sizeof(struct stat));
+		stbuf->st_mode = S_IFDIR | 0755;
 	}
-
-	/* Get history from fstree */
-	if (!(fr = find_fr(xpath, rev)))
-		return -ENOENT;
-	memset(stbuf, 0, sizeof(struct stat));
-	fill_stat(stbuf, fr);
 	return 0;
 }
 
@@ -62,13 +69,23 @@ static int phoenixfs_fgetattr(const char *path, struct stat *stbuf,
 
 static int phoenixfs_opendir(const char *path, struct fuse_file_info *fi)
 {
+	struct dir_record *dr;
 	DIR *dp;
 
 	PHOENIXFS_DBG("opendir:: %s", path);
 	build_xpath(xpath, path, 0);
-	dp = opendir(xpath);
-	if (!dp)
-		return -errno;
+
+	/* Try underlying fs */
+	if (!(dp = opendir(xpath))) {
+		/* Try fstree */
+		if (!(dr = find_dr(path)))
+			return -ENOENT;
+		else {
+			/* Make the directory and open it */
+			mkdir(xpath, S_IRUSR | S_IWUSR | S_IXUSR);
+			dp = opendir(xpath);
+		}
+	}
 	fi->fh = (intptr_t) dp;
 	return 0;
 }
@@ -122,7 +139,7 @@ static int phoenixfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 			if (filler(buf, (const char *) vfr->name, &st, 0))
 				return -ENOMEM;
 		}
-		if (iter->pointers[BTREE_ORDER - 1] != NULL)
+		if (iter->pointers && iter->pointers[BTREE_ORDER - 1] != NULL)
 			iter = iter->pointers[BTREE_ORDER - 1];
 		else
 			break;
@@ -277,8 +294,8 @@ static int phoenixfs_open(const char *path, struct fuse_file_info *fi)
 	rev = parse_pathspec(xpath, path);
 	build_xpath(fspath, xpath, 0);
 
-	/* Skip zinflate for latest revision and entries not in fstree */
-	if (!rev || !(fr = find_fr(xpath, rev)))
+	/* Skip zinflate for entries not in fstree */
+	if (!(fr = find_fr(xpath, rev)))
 		goto END;
 
 	/* Build openpath by hand */
@@ -303,7 +320,7 @@ static int phoenixfs_open(const char *path, struct fuse_file_info *fi)
 	if (zinflate(infile, fsfile) != Z_OK)
 		PHOENIXFS_DBG("open:: zinflate issue");
 	fclose(infile);
-	rewind(fsfile);
+	fclose(fsfile);
 END:
 	if ((fd = open(fspath, fi->flags)) < 0)
 		return -errno;
@@ -346,8 +363,12 @@ static int phoenixfs_read(const char *path, char *buf, size_t size,
 	ssize_t read_bytes;
 
 	PHOENIXFS_DBG("read:: %s", path);
-	if ((read_bytes = pread(fi->fh, buf, size, offset)) < 0)
+	pthread_mutex_lock(&phoenixfs_mutexlock);
+	if ((read_bytes = pread(fi->fh, buf, size, offset)) < 0) {
+		pthread_mutex_unlock(&phoenixfs_mutexlock);
 		return -errno;
+	}
+	pthread_mutex_unlock(&phoenixfs_mutexlock);
 	return read_bytes;
 }
 
@@ -357,8 +378,12 @@ static int phoenixfs_write(const char *path, const char *buf, size_t size,
 	ssize_t written_bytes;
 
 	PHOENIXFS_DBG("write:: %s", path);
-	if ((written_bytes = pwrite(fi->fh, buf, size, offset)) < 0)
+	pthread_mutex_lock(&phoenixfs_mutexlock);
+	if ((written_bytes = pwrite(fi->fh, buf, size, offset)) < 0) {
+		pthread_mutex_unlock(&phoenixfs_mutexlock);
 		return -errno;
+	}
+	pthread_mutex_unlock(&phoenixfs_mutexlock);
 	return written_bytes;
 }
 
@@ -383,6 +408,8 @@ static int phoenixfs_release(const char *path, struct fuse_file_info *fi)
 	char outpath[PATH_MAX];
 	int rev, ret;
 
+	pthread_mutex_lock(&phoenixfs_mutexlock);
+
 	/* Don't recursively backup history */
 	if ((rev = parse_pathspec(xpath, path))) {
 		PHOENIXFS_DBG("release:: history: %s", path);
@@ -390,6 +417,7 @@ static int phoenixfs_release(const char *path, struct fuse_file_info *fi)
 		/* Inflate the original version back onto the filesystem */
 		if (!(fr = find_fr(xpath, 0))) {
 			PHOENIXFS_DBG("release:: Can't find revision 0!");
+			pthread_mutex_unlock(&phoenixfs_mutexlock);
 			return 0;
 		}
 		print_sha1(sha1_digest, fr->sha1);
@@ -397,8 +425,10 @@ static int phoenixfs_release(const char *path, struct fuse_file_info *fi)
 		build_xpath(outpath, xpath, 0);
 
 		if (!(infile = fopen(inpath, "rb")) ||
-			!(outfile = fopen(outpath, "wb+")))
+			!(outfile = fopen(outpath, "wb+"))) {
+			pthread_mutex_unlock(&phoenixfs_mutexlock);
 			return -errno;
+		}
 		PHOENIXFS_DBG("release:: history: zinflate %s onto %s",
 			sha1_digest, outpath);
 		rewind(infile);
@@ -411,18 +441,25 @@ static int phoenixfs_release(const char *path, struct fuse_file_info *fi)
 
 		if (close(fi->fh) < 0) {
 			PHOENIXFS_DBG("release:: can't really close");
+			pthread_mutex_unlock(&phoenixfs_mutexlock);
 			return -errno;
 		}
+		pthread_mutex_unlock(&phoenixfs_mutexlock);
 		return 0;
 	}
 
 	/* Attempt to create a backup */
 	build_xpath(xpath, path, 0);
-	if ((infile = fopen(xpath, "rb")) < 0 ||
-		(lstat(xpath, &st) < 0))
+	if (!(infile = fopen(xpath, "rb")) ||
+		(lstat(xpath, &st) < 0)) {
+		pthread_mutex_unlock(&phoenixfs_mutexlock);
 		return -errno;
-	if ((ret = sha1_file(infile, st.st_size, sha1)) < 0)
+	}
+	if ((ret = sha1_file(infile, st.st_size, sha1)) < 0) {
+		fclose(infile);
+		pthread_mutex_unlock(&phoenixfs_mutexlock);
 		return ret;
+	}
 	print_sha1(outfilename, sha1);
 	sprintf(outpath, "%s/.git/loose/%s", ROOTENV->fsback, outfilename);
 	if (!access(outpath, F_OK)) {
@@ -430,8 +467,9 @@ static int phoenixfs_release(const char *path, struct fuse_file_info *fi)
 		PHOENIXFS_DBG("release:: not overwriting: %s", outpath);
 		goto END;
 	}
-	if ((outfile = fopen(outpath, "wb")) < 0) {
+	if (!(outfile = fopen(outpath, "wb"))) {
 		fclose(infile);
+		pthread_mutex_unlock(&phoenixfs_mutexlock);
 		return -errno;
 	}
 
@@ -441,9 +479,9 @@ static int phoenixfs_release(const char *path, struct fuse_file_info *fi)
 	if (zdeflate(infile, outfile, -1) != Z_OK)
 		PHOENIXFS_DBG("release:: zdeflate issue");
 	mark_for_packing(sha1, st.st_size);
-	fseek(infile, 0L, SEEK_END);
 	fclose(outfile);
 END:
+	fclose(infile);
 	if (close(fi->fh) < 0) {
 		PHOENIXFS_DBG("release:: can't really close");
 		return -errno;
@@ -451,12 +489,15 @@ END:
 
 	/* Update the fstree */
 	fstree_insert_update_file(path, NULL);
+
+	pthread_mutex_unlock(&phoenixfs_mutexlock);
 	return 0;
 }
 
 static int phoenixfs_fsync(const char *path,
 		int datasync, struct fuse_file_info *fi)
 {
+	PHOENIXFS_DBG("fsync:: %s", path);
 	if (datasync) {
 		if (fdatasync(fi->fh) < 0)
 			return -errno;
@@ -469,6 +510,7 @@ static int phoenixfs_fsync(const char *path,
 static int phoenixfs_ftruncate(const char *path,
 			off_t offset, struct fuse_file_info *fi)
 {
+	PHOENIXFS_DBG("ftruncate:: %s", path);
 	build_xpath(xpath, path, 0);
 	if (ftruncate(fi->fh, offset) < 0)
 		return -errno;
@@ -487,6 +529,7 @@ static int phoenixfs_readlink(const char *path, char *link, size_t size)
 
 static int phoenixfs_mkdir(const char *path, mode_t mode)
 {
+	PHOENIXFS_DBG("mkdir:: %s", path);
 	build_xpath(xpath, path, 0);
 	if (mkdir(xpath, mode) < 0)
 		return -errno;
@@ -526,6 +569,7 @@ static void phoenixfs_destroy(void *userdata)
 	}
 	PHOENIXFS_DBG("destroy:: dumping fstree");
 	fstree_dump_tree(outfile);
+	fclose(outfile);
 	PHOENIXFS_DBG("destroy:: packing loose objects");
 	sprintf(xpath, "%s/.git/loose", ROOTENV->fsback);
 	dump_packing_info(xpath);
@@ -560,6 +604,19 @@ static struct fuse_operations phoenixfs_oper = {
 	.rename = phoenixfs_rename,
 	.truncate = phoenixfs_truncate,
 	.utime = phoenixfs_utime,
+#if 0
+	.setxattr = phoenixfs_setxattr;
+	.getxattr = phoenixfs_getxattr;
+	.listxattr = phoenixfs_listxattr;
+	.removexattr = phoenixfs_removexattr;
+	.fsyncdir = phoenixfs_fsyncdir,
+	.lock = phoenixfs_lock,
+	.flush = phoenixfs_flush,
+	.utimens = phoenixfs_utimens,
+	.bmap = phoenixfs_bmap,
+	.poll = phoenixfs_poll,
+	.ioctl = phoenixfs_ioctl,
+#endif
 	.destroy = phoenixfs_destroy,
 };
 
@@ -567,13 +624,14 @@ static struct fuse_operations phoenixfs_oper = {
 /* argv[2] is fsback and argv[3] is the mountpoint */
 int phoenixfs_fuse(int argc, char *argv[])
 {
-	int nargc;
-	char **nargv;
+	char *nargv[4];
 	FILE *infile;
+	void *record;
 	struct stat st;
+	register int i;
+	struct dir_record *dr;
+	struct node *iter, *iter_root;
 
-	nargc = 4;
-	nargv = (char **) malloc(nargc * sizeof(char *));
 	struct env_t rootenv;
 
 	/* Sanitize fsback */
@@ -627,8 +685,37 @@ int phoenixfs_fuse(int argc, char *argv[])
 		(infile = fopen(xpath, "rb"))) {
 		PHOENIXFS_DBG("phoenixfs_fuse:: loading fstree");
 		fstree_load_tree(infile);
+		fclose(infile);
 	}
 
+	/* Re-create dr tree */
+	iter_root = get_fsroot();
+	iter = get_fsroot();
+
+	if (!iter)
+		goto END;
+
+	while (!iter->is_leaf)
+		iter = iter->pointers[0];
+
+	while (1) {
+		for (i = 0; i < iter->num_keys; i++) {
+			if (!(record = find(iter_root, iter->keys[i], 0)))
+				PHOENIXFS_DBG("readdir:: key listing issue");
+			dr = (struct dir_record  *) record;
+			PHOENIXFS_DBG("phoenixfs_fuse:: mkdir: %s",
+				(const char *) dr->name);
+			sprintf(xpath, "%s%s", rootenv.fsback,
+				(const char *) dr->name);
+			mkdir(xpath, S_IRUSR | S_IWUSR | S_IXUSR);
+		}
+		if (iter->pointers && iter->pointers[BTREE_ORDER - 1] != NULL)
+			iter = iter->pointers[BTREE_ORDER - 1];
+		else
+			break;
+	}
+
+END:
 	/* Check for .git/master.pack and .git/master.idx */
 	sprintf(xpath, "%s/.git/master.pack", rootenv.fsback);
 	sprintf(openpath, "%s/.git/master.idx", rootenv.fsback);
@@ -646,5 +733,5 @@ int phoenixfs_fuse(int argc, char *argv[])
 	nargv[1] = "-d";
 	nargv[2] = "-odefault_permissions";
 	nargv[3] = argv[3];
-	return fuse_main(nargc, nargv, &phoenixfs_oper, &rootenv);
+	return fuse_main(4, nargv, &phoenixfs_oper, &rootenv);
 }

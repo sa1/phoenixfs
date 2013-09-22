@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <sys/stat.h>
 
-struct loose_buf looseroot = {0};
+struct loose_buf looseroot = {0, NULL};
 static char xpath[PATH_MAX];
 
 void add_loose_entry(const unsigned char *sha1, size_t size)
@@ -16,8 +16,11 @@ void add_loose_entry(const unsigned char *sha1, size_t size)
 
 	this_nr = looseroot.nr;
 	print_sha1(sha1_digest, sha1);
+	looseroot.entries = realloc(looseroot.entries, (this_nr + 1) *
+				sizeof(struct pack_idx_entry *));
 	PHOENIXFS_DBG("add_loose_entry:: %s [%d]", sha1_digest, this_nr);
 	looseroot.entries[this_nr] = malloc(sizeof(struct pack_idx_entry));
+	memset(looseroot.entries[this_nr], 0, (sizeof(struct pack_idx_entry)));
 	memcpy(looseroot.entries[this_nr]->sha1, sha1, 20);
 	looseroot.entries[this_nr]->size = size;
 	looseroot.nr ++;
@@ -43,6 +46,13 @@ void packup_loose_objects(FILE *packfh, const void *idx_data,
 	off_t this_offset;
 	int existing_nr;
 
+	/* Don't unnecessarily rewrite the index */
+	if (idx_data && !looseroot.nr) {
+		PHOENIXFS_DBG("packup_loose_objects:: Not rewriting idx");
+		return;
+	}
+
+	/* Write packfile and idx */
 	fseek(packfh, 0L, SEEK_END);
 	for (i = 0; i < looseroot.nr; i++) {
 		this_entry = looseroot.entries[i];
